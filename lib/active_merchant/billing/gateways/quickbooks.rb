@@ -1,4 +1,8 @@
-require 'oauth'
+begin
+  require 'oauth'
+rescue LoadError
+  raise "OAuth is required to use QuickBooks Payments. Please run `gem install oauth`."
+end
 
 module ActiveMerchant #:nodoc:
   module Billing #:nodoc:
@@ -20,7 +24,35 @@ module ActiveMerchant #:nodoc:
         access_token_path: '/oauth/v1/get_access_token'
       }
 
-      STANDARD_ERROR_CODE_MAPPING = {}
+      # https://developer.intuit.com/docs/0150_payments/0300_developer_guides/error_handling
+
+      STANDARD_ERROR_CODE_MAPPING = {  
+        # Fraud Warnings
+        'PMT-1000' => STANDARD_ERROR_CODE[:processing_error],   # payment was accepted, but refund was unsuccessful
+        'PMT-1001' => STANDARD_ERROR_CODE[:processing_error],   # payment processed, but cvc was invalud
+        'PMT-1002' => STANDARD_ERROR_CODE[:processing_error],   # payment processed, incorrect address info
+        'PMT-1003' => STANDARD_ERROR_CODE[:processing_error],   # payment processed, address info couldn't be validated
+        
+        # Fraud Errors
+        'PMT-2000' => STANDARD_ERROR_CODE[:incorrect_cvc],      # Incorrect CVC
+        'PMT-2001' => STANDARD_ERROR_CODE[:invalid_cvc],        # CVC check unavaliable
+        'PMT-2002' => STANDARD_ERROR_CODE[:incorrect_address],  # Incorrect address
+        'PMT-2003' => STANDARD_ERROR_CODE[:incorrect_address],  # Address info unavailable
+
+        'PMT-3000' => STANDARD_ERROR_CODE[:processing_error],   # Merchant account could not be validated
+        
+        # Invalid Request
+        'PMT-4000' => STANDARD_ERROR_CODE[:processing_error],   # Oject is invalid
+        'PMT-4001' => STANDARD_ERROR_CODE[:processing_error],   # Object not found
+        'PMT-4002' => STANDARD_ERROR_CODE[:processing_error],   # Object is required
+
+        # Transaction Declined
+        'PMT-5000' => STANDARD_ERROR_CODE[:processing_error],   # Request was declined
+        'PMT-5001' => STANDARD_ERROR_CODE[:processing_error],   # Merchant does not support given payment method
+
+        # System Error
+        'PMT-6000' => STANDARD_ERROR_CODE[:processing_error],   # A temporary Issue prevented this request from being processed.
+      }
 
       def initialize(options={})
         requires!(options, :consumer_key, :consumer_secret, :access_token, :token_secret, :realm)
@@ -133,10 +165,6 @@ module ActiveMerchant #:nodoc:
         response[:amount]
       end
 
-      def authorization_object_from_endpoint(authorization)
-
-      end
-
       def parse(body)
         JSON.parse(body)
       end
@@ -159,7 +187,7 @@ module ActiveMerchant #:nodoc:
           parsed_response,
           authorization: nil, # TODO - parse this when we get a good auth,
           test: test?,
-          error_code: parsed_response["errors"].first["code"]
+          error_code: STANDARD_ERROR_CODE_MAPPING[parsed_response["errors"].first["code"]] || ""
         )
       end
 
