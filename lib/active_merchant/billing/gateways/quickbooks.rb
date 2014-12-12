@@ -1,5 +1,5 @@
 begin
-  require 'oauth'
+  require "oauth"
 rescue LoadError
   raise "OAuth is required to use QuickBooks Payments. Please run `gem install oauth`."
 end
@@ -26,7 +26,7 @@ module ActiveMerchant #:nodoc:
 
       # https://developer.intuit.com/docs/0150_payments/0300_developer_guides/error_handling
 
-      STANDARD_ERROR_CODE_MAPPING = {  
+      STANDARD_ERROR_CODE_MAPPING = {
         # Fraud Warnings
         'PMT-1000' => STANDARD_ERROR_CODE[:processing_error],   # payment was accepted, but refund was unsuccessful
         'PMT-1001' => STANDARD_ERROR_CODE[:processing_error],   # payment processed, but cvc was invalud
@@ -47,12 +47,14 @@ module ActiveMerchant #:nodoc:
         'PMT-4002' => STANDARD_ERROR_CODE[:processing_error],   # Object is required
 
         # Transaction Declined
-        'PMT-5000' => STANDARD_ERROR_CODE[:processing_error],   # Request was declined
+        'PMT-5000' => STANDARD_ERROR_CODE[:card_declined],      # Request was declined
         'PMT-5001' => STANDARD_ERROR_CODE[:processing_error],   # Merchant does not support given payment method
 
         # System Error
         'PMT-6000' => STANDARD_ERROR_CODE[:processing_error],   # A temporary Issue prevented this request from being processed.
       }
+
+      SUCCCESS_CODES = ['PMT-1000','PMT-1000','PMT-1001','PMT-1002','PMT-1003','0']
 
       def initialize(options={})
         requires!(options, :consumer_key, :consumer_secret, :access_token, :token_secret, :realm)
@@ -161,7 +163,8 @@ module ActiveMerchant #:nodoc:
       end
 
       def amount_to_void(authorization)
-        response = parse(ssl_request(:get, "#{gateway_url}#{ENDPOINT}/#{authorization}", post_data, headers))
+        uri = "#{gateway_url}#{ENDPOINT}/#{authorization}"
+        response = parse(ssl_request(:get, uri, post_data, headers(method: :get, uri: uri)))
         response[:amount]
       end
 
@@ -178,16 +181,18 @@ module ActiveMerchant #:nodoc:
           response = e.response.body
         end
 
-        parsed_response = parse(response)
-        success = !parsed_response.key?("errors")
+        response_object(response)
+      end
 
+      def response_object(raw_response)
+        parsed_response = parse(raw_response)
         Response.new(
-          success,
-          success ? "Transaction approved" : parsed_response["errors"].map {|error_hash| error_hash["message"] }.join(" "),
+          success?(parsed_response),
+          message_from(parsed_response),
           parsed_response,
-          authorization: nil, # TODO - parse this when we get a good auth,
+          authorization: authorization_from(parsed_response), 
           test: test?,
-          error_code: STANDARD_ERROR_CODE_MAPPING[parsed_response["errors"].first["code"]] || ""
+          error_code: errors_from(parsed_response)
         )
       end
 
@@ -230,9 +235,25 @@ module ActiveMerchant #:nodoc:
 
         {
           "Content-type" => "application/json",
-          "Request-Id" => @request_id.to_s,
+          "Request-Id" => Time.now.to_i.to_s,
           "Authorization" => oauth_header
         }
+      end
+
+      def success?(response)
+        response['errors'].present? ? SUCCCESS_CODES.include?(response['errors'].first['code']) : true
+      end
+      
+      def message_from(response)
+        response['errors'].present? ? response["errors"].map {|error_hash| error_hash["message"] }.join(" ") : "Transaction Approved" 
+      end
+
+      def errors_from(response)
+          response['errors'].present? ? STANDARD_ERROR_CODE_MAPPING[response["errors"].first["code"]] : ""
+      end
+
+      def authorization_from(response)
+        response['id']
       end
     end
   end
