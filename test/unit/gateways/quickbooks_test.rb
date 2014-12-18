@@ -20,6 +20,8 @@ class QuickBooksTest < Test::Unit::TestCase
       billing_address: address,
       description: 'Store Purchase'
     }
+
+    @authorization = "ECZ7U0SO423E"
   end
 
   def test_successful_purchase
@@ -36,22 +38,31 @@ class QuickBooksTest < Test::Unit::TestCase
 
     response = @gateway.purchase(@amount, @credit_card, @options)
     assert_failure response
-    assert_equal Gateway::STANDARD_ERROR_CODE[:processing_error], response.error_code
+    assert_equal Gateway::STANDARD_ERROR_CODE[:card_declined], response.error_code
   end
 
   def test_successful_authorize
     @gateway.expects(:ssl_post).returns(successful_authorize_response)
-    response = @gateway.purchase(@amount, @credit_card, @options)
+    response = @gateway.authorize(@amount, @credit_card, @options)
     assert_success response
 
-    assert_equal "ECZ7U0SO423E", response.authorization
+    assert_equal @authorization, response.authorization
     assert response.test?
   end
 
   def test_failed_authorize
+    @gateway.expects(:ssl_post).returns(failed_purchase_response)
+
+    response = @gateway.authorize(@amount, @credit_card, @options)
+    assert_failure response
+    assert_equal Gateway::STANDARD_ERROR_CODE[:card_declined], response.error_code
   end
 
   def test_successful_capture
+    @gateway.expects(:ssl_post).returns(successful_capture_response)
+
+    response = @gateway.capture(@amount, @authorization)
+    assert_success response
   end
 
   def test_failed_capture
@@ -76,6 +87,11 @@ class QuickBooksTest < Test::Unit::TestCase
   end
 
   def test_failed_verify
+  end
+
+  def test_scrub
+    assert @gateway.supports_scrubbing?
+    assert_equal @gateway.send(:scrub, pre_scrubbed), post_scrubbed
   end
 
   private
@@ -111,9 +127,9 @@ class QuickBooksTest < Test::Unit::TestCase
     <<-RESPONSE
     {
       "errors":[{
-        "code": "PMT-4000",
+        "code": "PMT-5000",
         "type": "invalid_request",
-        "message": "Amount. is invalid.",
+        "message": "he request to process this transaction has been declined.",
         "detail": "Amount.",
         "infoLink": "https://developer.intuit.com/v2/docs?redirectID=PayErrors"
       }]
@@ -149,23 +165,92 @@ class QuickBooksTest < Test::Unit::TestCase
   end
 
   def failed_authorize_response
+    <<-RESPONSE
+    {
+      "errors":[{
+        "code": "PMT-5000",
+        "type": "invalid_request",
+        "message": "he request to process this transaction has been declined.",
+        "detail": "Amount.",
+        "infoLink": "https://developer.intuit.com/v2/docs?redirectID=PayErrors"
+      }]
+    }
+    RESPONSE
   end
 
   def successful_capture_response
+    <<-RESPONSE
+    {
+      "created": "2014-12-17T22:39:21Z",
+      "status": "CAPTURED",
+      "amount": "10.55",
+      "currency": "USD",
+      "card": {
+        "number": "xxxxxxxxxxxx4444",
+        "cvc": "xxx",
+        "name": "emulate=0",
+        "address": {
+          "city": "xxxxxxxxx",
+          "region": "xx",
+          "country": "xx",
+          "streetAddress": "xxxxxxxxxxxxx",
+          "postalCode": "xxxxx"
+        },
+        "expMonth": "02",
+        "expYear": "2020"
+      },
+      "id": "ELFWEU8LS00K",
+      "authCode": "537265"
+    }
+    RESPONSE
   end
 
   def failed_capture_response
+    <<-RESPONSE
+    {
+      "errors":[{
+        "code": "PMT-5000",
+        "type": "invalid_request",
+        "message": "he request to process this transaction has been declined.",
+        "detail": "Amount.",
+        "infoLink": "https://developer.intuit.com/v2/docs?redirectID=PayErrors"
+      }]
+    }
+    RESPONSE
   end
 
   def successful_refund_response
   end
 
   def failed_refund_response
+    <<-RESPONSE
+    {
+      "errors":[{
+        "code": "PMT-5000",
+        "type": "invalid_request",
+        "message": "he request to process this transaction has been declined.",
+        "detail": "Amount.",
+        "infoLink": "https://developer.intuit.com/v2/docs?redirectID=PayErrors"
+      }]
+    }
+    RESPONSE
   end
 
   def successful_void_response
+  
   end
 
   def failed_void_response
+    <<-RESPONSE
+    {
+      "errors":[{
+        "code": "PMT-5000",
+        "type": "invalid_request",
+        "message": "he request to process this transaction has been declined.",
+        "detail": "Amount.",
+        "infoLink": "https://developer.intuit.com/v2/docs?redirectID=PayErrors"
+      }]
+    }
+    RESPONSE
   end
 end
