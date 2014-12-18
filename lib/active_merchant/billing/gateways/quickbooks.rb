@@ -68,6 +68,7 @@ module ActiveMerchant #:nodoc:
 
       def purchase(money, payment, options = {})
         post = {}
+        add_amount(post, money, options)
         add_charge_data(post, payment, options)
         post[:capture] = "true"
 
@@ -114,7 +115,14 @@ module ActiveMerchant #:nodoc:
       end
 
       def scrub(transcript)
-        transcript
+        transcript.
+          gsub(%r((realm=\")\w+), '\1[FILTERED]').
+          gsub(%r((oauth_consumer_key=\")\w+), '\1[FILTERED]').
+          gsub(%r((oauth_nonce=\")\w+), '\1[FILTERED]').
+          gsub(%r((oauth_signature=\")[a-zA-Z%0-9]+), '\1[FILTERED]').
+          gsub(%r((oauth_token=\")\w+), '\1[FILTERED]').
+          gsub(%r((\"card\":{\"number\":\")\d+), '\1[FILTERED]').
+          gsub(%r((\"cvc\":\")\d+), '\1[FILTERED]')
       end
 
       private
@@ -131,7 +139,7 @@ module ActiveMerchant #:nodoc:
         if address = options[:billing_address] || options[:address]
           card_address[:streetAddress] = address[:address1]
           card_address[:city] = address[:city]
-          card_address[:region] = address[:state]
+          card_address[:region] = address[:state] || address[:region]
           card_address[:country] = address[:country]
           card_address[:postalCode] = address[:zip] if address[:zip]
         end
@@ -180,7 +188,7 @@ module ActiveMerchant #:nodoc:
 
       def commit(uri, body = {})
         endpoint = gateway_url + uri
-
+        
         begin
           response = ssl_post(endpoint, post_data(body), headers(method: :post, uri: endpoint))
         rescue ResponseError => e
