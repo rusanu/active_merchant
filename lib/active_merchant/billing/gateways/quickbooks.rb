@@ -48,7 +48,7 @@ module ActiveMerchant #:nodoc:
 
         # Transaction Declined
         'PMT-5000' => STANDARD_ERROR_CODE[:card_declined],      # Request was declined
-        'PMT-5001' => STANDARD_ERROR_CODE[:card_declined],   # Merchant does not support given payment method
+        'PMT-5001' => STANDARD_ERROR_CODE[:card_declined],      # Merchant does not support given payment method
 
         # System Error
         'PMT-6000' => STANDARD_ERROR_CODE[:processing_error],   # A temporary Issue prevented this request from being processed.
@@ -86,19 +86,19 @@ module ActiveMerchant #:nodoc:
 
       def capture(money, authorization, options = {})
         capture_uri = "#{ENDPOINT}/#{CGI.escape(authorization)}/capture"
-        commit(capture_uri, )
+        commit(capture_uri)
       end
 
       def refund(money, authorization, options = {})
         post = {}
-        post[:amount] = money.to_s
-        refund_uri = "#{ENDPOINT}/#{CGI.escape(authorization)}/refund"
-        commit(refund_uri, post)
+        post[:amount] = amount(money)
+        refund_uri = "#{ENDPOINT}/#{CGI.escape(authorization)}/refunds"
+        commit(refund_uri, post) 
       end
 
       def void(authorization, options = {})
         MultiResponse.run do |r|
-          amount = r.process { amount_to_void(authorization: authorization) }
+          amount = amount_to_void(authorization)
           r.process { refund(amount, authorization, options = {}) }
         end.responses.last
       end
@@ -106,7 +106,7 @@ module ActiveMerchant #:nodoc:
       def verify(credit_card, options = {})
         MultiResponse.run(:use_first_response) do |r|
           r.process { authorize(1.00, credit_card, options) }
-          r.process(:ignore_result) { void(r.authorization, options) }
+          r.process { void(r.authorization, options) }
         end
       end
 
@@ -177,9 +177,9 @@ module ActiveMerchant #:nodoc:
       end
 
       def amount_to_void(authorization)
-        uri = "#{gateway_url}#{ENDPOINT}/#{authorization}"
-        response = parse(ssl_request(:get, uri, post_data, headers(method: :get, uri: uri)))
-        response[:amount]
+        url = "#{gateway_url}#{ENDPOINT}/#{authorization}"
+        response = parse(ssl_request(:get, url, nil, headers(method: :get, uri: url)))
+        response['amount'].to_f
       end
 
       def parse(body)
@@ -188,7 +188,6 @@ module ActiveMerchant #:nodoc:
 
       def commit(uri, body = {})
         endpoint = gateway_url + uri
-        
         begin
           response = ssl_post(endpoint, post_data(body), headers(method: :post, uri: endpoint))
         rescue ResponseError => e
