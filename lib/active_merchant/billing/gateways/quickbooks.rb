@@ -12,7 +12,7 @@ module ActiveMerchant #:nodoc:
 
       self.supported_countries = ['US']
       self.default_currency = 'USD'
-      self.supported_cardtypes = [:visa, :master, :american_express, :discover]
+      self.supported_cardtypes = [:visa, :master, :american_express, :discover, :diners]
 
       self.homepage_url = 'http://payments.intuit.com'
       self.display_name = 'QuickBooks Payments'
@@ -54,7 +54,7 @@ module ActiveMerchant #:nodoc:
         'PMT-6000' => STANDARD_ERROR_CODE[:processing_error],   # A temporary Issue prevented this request from being processed.
       }
 
-      FRAUD_WARNING_CODES = ['PMT-1000','PMT-1001','PMT-1002','PMT-1003','0']
+      FRAUD_WARNING_CODES = ['PMT-1000','PMT-1001','PMT-1002','PMT-1003']
 
       def initialize(options = {})
         requires!(options, :consumer_key, :consumer_secret, :access_token, :token_secret, :realm)
@@ -86,6 +86,7 @@ module ActiveMerchant #:nodoc:
 
       def capture(money, authorization, options = {})
         capture_uri = "#{ENDPOINT}/#{CGI.escape(authorization)}/capture"
+
         commit(capture_uri)
       end
 
@@ -93,6 +94,7 @@ module ActiveMerchant #:nodoc:
         post = {}
         post[:amount] = money.is_a?(String) ? money : amount(money)
         refund_uri = "#{ENDPOINT}/#{CGI.escape(authorization)}/refunds"
+
         commit(refund_uri, post) 
       end
 
@@ -109,7 +111,7 @@ module ActiveMerchant #:nodoc:
         MultiResponse.run(:use_first_response) do |r|
           r.process { authorize(1.00, credit_card, options) }
           r.process { void(r.authorization, options) }
-        end.responses.last
+        end
       end
 
       def supports_scrubbing?
@@ -137,6 +139,7 @@ module ActiveMerchant #:nodoc:
 
       def add_address(post, options)
         return unless post[:card] && post[:card].kind_of?(Hash)
+        
         card_address = {}
         if address = options[:billing_address] || options[:address]
           card_address[:streetAddress] = address[:address1]
@@ -217,6 +220,7 @@ module ActiveMerchant #:nodoc:
 
       def response_object(raw_response)
         parsed_response = parse(raw_response)
+
         Response.new(
           success?(parsed_response),
           message_from(parsed_response),
@@ -238,16 +242,16 @@ module ActiveMerchant #:nodoc:
 
       def headers(options)
         return unless options[:method] && options[:uri]
+        
         method = options[:method]
         uri = options[:uri]
-
         request_uri = URI.parse(uri)
 
         request_class = case method
-        when :post
-          Net::HTTP::Post
-        when :get
-          Net::HTTP::Get
+          when :post
+            Net::HTTP::Post
+          when :get
+           Net::HTTP::Get
         end
         consumer = OAuth::Consumer.new(
           @consumer_key,
@@ -281,7 +285,7 @@ module ActiveMerchant #:nodoc:
       end
 
       def success?(response)
-        response['errors'].present? ? FRAUD_WARNING_CODES.include?(response['errors'].first['code']) : true
+        response['errors'].present? ? FRAUD_WARNING_CODES.merge(['0']).include?(response['errors'].first['code']) : true
       end
       
       def message_from(response)
