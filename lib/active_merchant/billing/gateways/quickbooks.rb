@@ -91,15 +91,17 @@ module ActiveMerchant #:nodoc:
 
       def refund(money, authorization, options = {})
         post = {}
-        post[:amount] = amount(money)
+        post[:amount] = money.is_a?(String) ? money : amount(money)
         refund_uri = "#{ENDPOINT}/#{CGI.escape(authorization)}/refunds"
         commit(refund_uri, post) 
       end
 
       def void(authorization, options = {})
         MultiResponse.run do |r|
-          amount = amount_to_void(authorization)
-          r.process { refund(amount, authorization, options = {}) }
+          r.process { auth_object_from(authorization) } 
+          if amount = r.params.try(:[], 'amount')
+            r.process { refund(amount, authorization, options) }
+          end
         end.responses.last
       end
 
@@ -107,7 +109,7 @@ module ActiveMerchant #:nodoc:
         MultiResponse.run(:use_first_response) do |r|
           r.process { authorize(1.00, credit_card, options) }
           r.process { void(r.authorization, options) }
-        end
+        end.responses.last
       end
 
       def supports_scrubbing?
@@ -176,22 +178,38 @@ module ActiveMerchant #:nodoc:
         post[:context] = payment_context
       end
 
-      def amount_to_void(authorization)
-        url = "#{gateway_url}#{ENDPOINT}/#{authorization}"
-        response = parse(ssl_request(:get, url, nil, headers(method: :get, uri: url)))
-        response['amount'].to_f
+      def auth_object_from(authorization)
+        uri = "#{ENDPOINT}/#{authorization}"
+        commit(uri, {}, method = :get)
       end
 
       def parse(body)
         JSON.parse(body)
       end
 
-      def commit(uri, body = {})
+      def commit(uri, body = {}, method = :post)
         endpoint = gateway_url + uri
         begin
-          response = ssl_post(endpoint, post_data(body), headers(method: :post, uri: endpoint))
+          response = case method
+          when :post
+            ssl_post(endpoint, post_data(body), headers(method: :post, uri: endpoint))
+          when :get
+            ssl_request(:get, endpoint, nil, headers(method: :get, uri: endpoint))
+          end
         rescue ResponseError => e
-          response = e.response.body
+          if e.response.body.present?
+            response = e.response.body 
+          else
+            return Response.new(
+              false,
+              "There was a problem connecting to QuickBooks",
+              {
+                code: e.response.code,
+                message: e.response.message 
+              },
+              test: test?
+              )
+            end
         end
 
         response_object(response)
@@ -257,7 +275,7 @@ module ActiveMerchant #:nodoc:
       def cvv_code_from(response)
         if response['errors'].present?
           FRAUD_WARNING_CODES.include?(response['errors'].first['code']) ? 'I' : ''
-        else 
+        elsif 
           success?(response) ? 'M' : ''
         end
       end

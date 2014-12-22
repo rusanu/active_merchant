@@ -3,9 +3,9 @@ require 'test_helper'
 class RemoteTest < Test::Unit::TestCase
   def setup
     @gateway = QuickbooksGateway.new(fixtures(:quickbooks))
-    @amount = 1.00
+    @amount = 100
     @credit_card = credit_card('4000100011112224')
-    @declined_card = credit_card('4000000000000002')
+    @declined_card = credit_card('4000000000000001')
 
     @options = {
       order_id: '1',
@@ -83,21 +83,21 @@ class RemoteTest < Test::Unit::TestCase
   end
 
   def test_failed_void
-    response = @gateway.void('')
+    response = @gateway.void('some_bad_thing')
     assert_failure response
   end
 
   def test_successful_verify
     response = @gateway.verify(@credit_card, @options)
     assert_success response
-    assert_match %r{REPLACE WITH SUCCESS MESSAGE}, response.message
+    assert_match %r{Transaction Approved}, response.message
   end
 
   def test_failed_verify
     response = @gateway.verify(@declined_card, @options)
     assert_failure response
-    assert_match %r{REPLACE WITH FAILED PURCHASE MESSAGE}, response.message
-    assert_equal Gateway::STANDARD_ERROR_CODE[:card_declined], response.error_code
+    assert_match %r{cardNumber is invalid.}, response.message
+    assert_equal Gateway::STANDARD_ERROR_CODE[:processing_error], response.error_code
   end
 
   def test_invalid_login
