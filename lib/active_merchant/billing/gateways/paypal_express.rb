@@ -169,7 +169,10 @@ module ActiveMerchant #:nodoc:
 
               xml.tag! 'n2:CallbackURL', options[:callback_url] unless options[:callback_url].blank?
 
-              add_payment_details(xml, money, currency_code, options)
+              if (money)
+                add_payment_details(xml, money, currency_code, options)
+              end
+
               if options[:shipping_options]
                 options[:shipping_options].each do |shipping_option|
                   xml.tag! 'n2:FlatRateShippingOptions' do
